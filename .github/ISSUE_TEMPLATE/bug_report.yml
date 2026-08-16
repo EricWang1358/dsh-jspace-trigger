@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a bug or unexpected behavior
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill in as much as you can.
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH version
+      description: Run `dsh --version`
+      placeholder: "0.1.0-rc.6"
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: Profile
+      description: Which profile is affected?
+      placeholder: "web"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version / commit
+      description: "Version or commit SHA of dsh-jspace-trigger"
+      placeholder: "0.1.0 / 16a14a8"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact user message and config if relevant.
+      placeholder: |
+        1. Install ...
+        2. Configure ...
+        3. Send "仓库级跨文件重构"
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / status
+      description: Paste `jspace_trigger_status`, console logs, or relevant output.
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: "Minimal `cordis.patch.yml` or rule config if the bug is config-related."
+      render: yaml

@@ -5,11 +5,22 @@
   "license": "MIT",
   "type": "module",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EricWang1358/dsh-jspace-trigger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EricWang1358/dsh-jspace-trigger/issues"
+  },
+  "homepage": "https://github.com/EricWang1358/dsh-jspace-trigger#readme",
   "files": [
     "index.js",
     "src",
     "cordis.patch.yml",
     "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
     "docs"
   ],
   "dsh": {

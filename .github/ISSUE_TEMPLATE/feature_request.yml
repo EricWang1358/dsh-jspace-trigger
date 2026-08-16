@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an idea for this plugin
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your idea. Please keep the project scope in mind:
+        configurable, non-intrusive, near-field triggering.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should the plugin do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other designs or workarounds you tried.
+  - type: textarea
+    id: example
+    attributes:
+      label: Example configuration / message
+      description: Show how you expect the rule or tool to work.
+      render: yaml
