@@ -11,6 +11,7 @@
 
 import {
   ACTION_TRIGGER,
+  INJECT_MODE_NEAR_FIELD,
   buildGuideText,
   evaluateRules,
   extractText,
@@ -39,6 +40,26 @@ export function apply(ctx, config = {}) {
   const cfg = mergeConfig(config)
   const agents = new Map() // session.id -> Agent
   const seen = new Set() // sid:eventId
+  const metrics = {
+    userEvents: 0,
+    triggered: 0,
+    injected: 0,
+    observeOnly: 0,
+    inboxFailures: 0,
+  }
+  const recentHits = []
+
+  const rememberHit = (session, event, decision) => {
+    recentHits.push({
+      sessionId: session?.id ?? null,
+      eventId: event?.id ?? null,
+      reason: decision.reason,
+      pass: decision.pass,
+      mode: cfg.injectMode,
+      at: new Date().toISOString(),
+    })
+    if (recentHits.length > 20) recentHits.shift()
+  }
 
   // 记录所有装配时可见的 agent，供后续 session/event 找到对应 inbox。
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
@@ -58,8 +79,18 @@ export function apply(ctx, config = {}) {
     const text = extractText(data)
     if (!text) return
 
+    metrics.userEvents += 1
     const decision = evaluateRules(cfg, text)
     if (decision.action !== ACTION_TRIGGER) return
+    metrics.triggered += 1
+    rememberHit(session, event, decision)
+
+    // `none` is deliberately observe-only: dry-runs and status still reveal
+    // matches, but no extra message reaches the model.
+    if (cfg.injectMode !== INJECT_MODE_NEAR_FIELD) {
+      metrics.observeOnly += 1
+      return
+    }
 
     // 同一轮只提示一次
     const key = `${session?.id}:${event.id}`
@@ -70,7 +101,6 @@ export function apply(ctx, config = {}) {
     // 找到目标 agent 的 inbox
     const current = ctx.get('agent')
     let agent = current && current.session?.id === session?.id ? current : agents.get(session?.id)
-    if (!agent && current) agent = current
     if (!agent || !agent.inbox) return
 
     const guide = buildGuideText(decision, text, cfg)
@@ -81,7 +111,9 @@ export function apply(ctx, config = {}) {
         source: { kind: 'plugin', plugin: name },
         content: [{ type: 'text', text: guide }],
       })
+      metrics.injected += 1
     } catch (error) {
+      metrics.inboxFailures += 1
       ctx.logger?.warn?.(`[${name}] inbox append failed: ${error?.message ?? error}`)
     }
   })
@@ -99,7 +131,7 @@ export function apply(ctx, config = {}) {
 
   registerTool({
     name: 'jspace_trigger_status',
-    description: "Show dsh-jspace-trigger configuration, rule count and recent hit count.",
+    description: 'Show dsh-jspace-trigger configuration and event/injection counters.',
     parameters: {},
     output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
     execute() {
@@ -110,7 +142,13 @@ export function apply(ctx, config = {}) {
         `loopChars=${cfg.trigger.loopChars}`,
         `fullChars=${cfg.trigger.fullChars}`,
         `rules=${cfg.trigger.rules.length}`,
-        `seen=${seen.size}`,
+        `deduplicatedEvents=${seen.size}`,
+        `userEvents=${metrics.userEvents}`,
+        `triggered=${metrics.triggered}`,
+        `injected=${metrics.injected}`,
+        `observeOnly=${metrics.observeOnly}`,
+        `inboxFailures=${metrics.inboxFailures}`,
+        `recentHits=${recentHits.length}`,
       ].join('\n')
     },
   })
@@ -126,7 +164,10 @@ export function apply(ctx, config = {}) {
       const text = String(args?.text ?? '').trim()
       const decision = evaluateRules(cfg, text)
       const guide = buildGuideText(decision, text, cfg)
-      return `${formatDecision(decision)}\n---\n${guide || '(silent)'}`
+      const delivery = decision.action === ACTION_TRIGGER && cfg.injectMode !== INJECT_MODE_NEAR_FIELD
+        ? `(not injected: injectMode=${cfg.injectMode})`
+        : guide || '(silent)'
+      return `${formatDecision(decision)}\n---\n${delivery}`
     },
   })
 

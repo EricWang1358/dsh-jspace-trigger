@@ -4,6 +4,8 @@ import {
   ACTION_IGNORE,
   ACTION_NONE,
   ACTION_TRIGGER,
+  INJECT_MODE_NEAR_FIELD,
+  INJECT_MODE_NONE,
   PASS_FAST,
   PASS_FULL,
   PASS_LOOP,
@@ -81,6 +83,19 @@ test('custom rules can override defaults', () => {
   assert.equal(evaluateRules(cfg, '需要深度也可以仔细想想').action, ACTION_TRIGGER)
 })
 
+test('configuration normalizes unsupported values without disabling valid zero thresholds', () => {
+  const cfg = mergeConfig({
+    injectMode: 'system-section',
+    trigger: { fullChars: 0, loopChars: -1, minScore: 0 },
+  })
+  assert.equal(cfg.injectMode, INJECT_MODE_NEAR_FIELD)
+  assert.equal(cfg.trigger.fullChars, 0)
+  assert.equal(cfg.trigger.loopChars, 1800)
+  assert.equal(cfg.trigger.minScore, 1)
+
+  assert.equal(mergeConfig({ injectMode: INJECT_MODE_NONE }).injectMode, INJECT_MODE_NONE)
+})
+
 test('all mode requires every pattern', () => {
   const cfg = mergeConfig({
     trigger: {
@@ -97,6 +112,22 @@ test('all mode requires every pattern', () => {
   })
   assert.equal(evaluateRules(cfg, '帮我重构一下').action, ACTION_NONE)
   assert.equal(evaluateRules(cfg, '重构这个架构').action, ACTION_TRIGGER)
+})
+
+test('regular-expression rules work even when supplied without the global flag', () => {
+  const cfg = mergeConfig({
+    trigger: {
+      rules: [
+        {
+          id: 'regexp',
+          action: ACTION_TRIGGER,
+          pass: PASS_FULL,
+          patterns: [/hello/i],
+        },
+      ],
+    },
+  })
+  assert.equal(evaluateRules(cfg, 'Hello there').action, ACTION_TRIGGER)
 })
 
 test('extractText handles nested message shape', () => {

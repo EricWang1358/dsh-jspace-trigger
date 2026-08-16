@@ -12,6 +12,9 @@ export const ACTION_TRIGGER = 'trigger'
 export const ACTION_IGNORE = 'ignore'
 export const ACTION_NONE = 'none'
 
+export const INJECT_MODE_NEAR_FIELD = 'near-field'
+export const INJECT_MODE_NONE = 'none'
+
 export const DEFAULT_LOOP_MODULES = ['capacity', 'broadcast', 'markers', 'self-monitoring']
 export const DEFAULT_FULL_MODULES = ['deep-reasoning', 'self-monitoring']
 
@@ -61,7 +64,7 @@ const DEFAULT_RULES = [
 export function createDefaultConfig() {
   return {
     enabled: true,
-    injectMode: 'near-field', // near-field | system-section | none
+    injectMode: INJECT_MODE_NEAR_FIELD,
     trigger: {
       minScore: 1,
       loopChars: 1800,
@@ -71,16 +74,30 @@ export function createDefaultConfig() {
   }
 }
 
+function positiveInteger(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback
+}
+
+function nonNegativeInteger(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : fallback
+}
+
+function normalizeInjectMode(value, fallback) {
+  return value === INJECT_MODE_NONE || value === INJECT_MODE_NEAR_FIELD ? value : fallback
+}
+
 export function mergeConfig(input) {
   const base = createDefaultConfig()
   if (!input || typeof input !== 'object') return base
   const out = {
     enabled: input.enabled !== false,
-    injectMode: typeof input.injectMode === 'string' ? input.injectMode : base.injectMode,
+    injectMode: normalizeInjectMode(input.injectMode, base.injectMode),
     trigger: {
-      minScore: Number(input.trigger?.minScore ?? base.trigger.minScore) || 1,
-      loopChars: Number(input.trigger?.loopChars ?? base.trigger.loopChars) || 0,
-      fullChars: Number(input.trigger?.fullChars ?? base.trigger.fullChars) || 0,
+      minScore: positiveInteger(input.trigger?.minScore, base.trigger.minScore),
+      loopChars: nonNegativeInteger(input.trigger?.loopChars, base.trigger.loopChars),
+      fullChars: nonNegativeInteger(input.trigger?.fullChars, base.trigger.fullChars),
       rules: Array.isArray(input.trigger?.rules) ? input.trigger.rules : base.trigger.rules,
     },
   }
@@ -88,9 +105,11 @@ export function mergeConfig(input) {
 }
 
 function compilePattern(pattern) {
-  if (pattern instanceof RegExp) return pattern
+  if (typeof pattern !== 'string' && !(pattern instanceof RegExp)) return null
   try {
-    return new RegExp(pattern, 'gi')
+    const source = pattern instanceof RegExp ? pattern.source : pattern
+    const flags = pattern instanceof RegExp ? pattern.flags : 'i'
+    return new RegExp(source, flags.includes('g') ? flags : `${flags}g`)
   } catch {
     return null
   }
@@ -98,8 +117,10 @@ function compilePattern(pattern) {
 
 function hitCount(regex, text) {
   try {
+    regex.lastIndex = 0
     let count = 0
     for (const _ of text.matchAll(regex)) count += 1
+    regex.lastIndex = 0
     return count
   } catch {
     return 0
@@ -118,34 +139,32 @@ function matchRule(rule, text, minScore) {
 
   const mode = rule.matchMode ?? 'any'
 
+  const matches = regexes.map(({ pattern, regex }) => ({ pattern, hits: hitCount(regex, text) }))
+
   if (mode === 'all') {
-    const ok = regexes.every(({ regex }) => hitCount(regex, text) > 0)
+    const ok = matches.every(({ hits }) => hits > 0)
     return {
       matched: ok,
-      hits: ok ? regexes.length : 0,
-      matchedPatterns: ok ? regexes.map(({ pattern }) => pattern) : [],
+      hits: ok ? matches.reduce((sum, entry) => sum + entry.hits, 0) : 0,
+      matchedPatterns: ok ? matches.map(({ pattern }) => pattern) : [],
     }
   }
 
   if (mode === 'score') {
-    const hits = regexes.reduce((sum, { regex }) => sum + hitCount(regex, text), 0)
+    const hits = matches.reduce((sum, entry) => sum + entry.hits, 0)
     return {
       matched: hits >= minScore,
       hits,
-      matchedPatterns: regexes
-        .filter(({ regex }) => hitCount(regex, text) > 0)
-        .map(({ pattern }) => pattern),
+      matchedPatterns: matches.filter(({ hits }) => hits > 0).map(({ pattern }) => pattern),
     }
   }
 
   // any
-  const hits = regexes.reduce((sum, { regex }) => sum + hitCount(regex, text), 0)
+  const hits = matches.reduce((sum, entry) => sum + entry.hits, 0)
   return {
     matched: hits > 0,
     hits,
-    matchedPatterns: regexes
-      .filter(({ regex }) => hitCount(regex, text) > 0)
-      .map(({ pattern }) => pattern),
+    matchedPatterns: matches.filter(({ hits }) => hits > 0).map(({ pattern }) => pattern),
   }
 }
 
@@ -224,7 +243,7 @@ export function buildGuideText(decisionValue, text = '', config = {}) {
   const passText = decisionValue.pass ? `J-space pass: ${decisionValue.pass}.` : ''
   const modules = Array.isArray(decisionValue.modules) ? decisionValue.modules : []
   const moduleText = modules.length ? ` Suggested modules: ${modules.join(', ')}.` : ''
-  const prefix = cfg.injectMode === 'none' ? '' : '[jspace-trigger] '
+  const prefix = cfg.injectMode === INJECT_MODE_NEAR_FIELD ? '[jspace-trigger] ' : ''
   return `${prefix}${passText}${moduleText} If this task needs structured workspace control, load the \`j-space\` skill and follow its gate.`.trim()
 }
 

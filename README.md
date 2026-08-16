@@ -58,6 +58,13 @@ dsh-jspace-trigger/
 
 优先级：`explicit > ignore > loop > full > 长度兜底 > none`。
 
+`injectMode` 仅支持以下模式：
+
+- `near-field`（默认）：命中时向对应会话的 agent inbox 追加一条提示。
+- `none`：仅统计命中，绝不向模型追加消息；适合先校准规则。
+
+其他值会安全地回退为 `near-field`。
+
 ## 安装
 
 已在 `web` profile 安装：
@@ -73,6 +80,8 @@ dsh plugin --profile web add "link:D:\A\1CMU\dsh-jspace-trigger"
 ```powershell
 npm test
 ```
+
+测试覆盖规则求值，以及模拟 Cordis 会话事件中的去重、按会话投递和 observe-only 行为。
 
 ## 文档
 

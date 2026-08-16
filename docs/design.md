@@ -72,9 +72,9 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
 
 ```yaml
 enabled: true
-injectMode: near-field   # near-field | system-section | none
+injectMode: near-field   # near-field | none
 trigger:
-  minScore: 1            # 至少要命中多少个关键词/正则才触发
+  minScore: 1            # matchMode: score 时至少命中多少个关键词/正则
   loopChars: 1800        # 超过该长度直接判 loop
   fullChars: 120         # 超过该长度且非 chat 判 full
   rules:
@@ -121,8 +121,8 @@ trigger:
 | 字段 | 说明 |
 |---|---|
 | `enabled` | 总开关 |
-| `injectMode` | `near-field` 推荐；`system-section` 为全局静态段；`none` 只记录不注入 |
-| `trigger.minScore` | 命中数阈值，减少单关键词误报 |
+| `injectMode` | `near-field` 推荐；`none` 为仅观测：记录命中但不注入 |
+| `trigger.minScore` | `matchMode: score` 时的命中数阈值，减少单关键词误报 |
 | `trigger.rules[].action` | `trigger` / `ignore` / `none` |
 | `trigger.rules[].pass` | `fast` / `full` / `loop` |
 | `trigger.rules[].modules` | 命中后建议加载的 J-Space 模块 |
@@ -177,7 +177,7 @@ export function apply(ctx, config) {
 
 ### 建议工具
 
-- `jspace_trigger_status`：查看当前规则配置、最近命中记录。
+- `jspace_trigger_status`：查看当前规则配置，以及命中、注入、observe-only 和失败计数。
 - `jspace_trigger_test <text>`：干跑一条消息，输出决策结果，便于调规则。
 
 ## 6. 与已装插件/生态的共存
