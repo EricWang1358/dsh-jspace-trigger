@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-green?style=flat-square">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-24%2F24-passing-brightgreen?style=flat-square">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-28%2F28-passing-brightgreen?style=flat-square">
 </p>
 
 ---
@@ -94,7 +94,7 @@ After restart, the tools `jspace_trigger_status`, `jspace_trigger_test`, and `js
 Priority order (first match wins):
 
 ```text
-explicit > ignore > loop > full > length fallback > none
+explicit > ignore > workspace-research > loop > research > complex > length fallback > none
 ```
 
 ### Default rules
@@ -103,7 +103,9 @@ explicit > ignore > loop > full > length fallback > none
 | --- | --- | --- |
 | `explicit` | `/j-space`, `use j-space`, `启用 j-space`, `加载 j-space` | `loop` + `capacity, broadcast` |
 | `chat` | `你好`, `hello`, `thanks`, `ok`, `嗯` | **ignore** (silent) |
+| `workspace-research` | 文件夹/目录/仓库 + 调研/盘点/画像等综合意图 | `loop` + `capacity, broadcast, markers, self-monitoring` |
 | `loop` | 仓库级、跨文件、多阶段、多轮、long-horizon、multi-file | `loop` + `capacity, broadcast, markers, self-monitoring` |
+| `research` | 调研、盘点、梳理、尽调、research、survey | `full` + `deep-reasoning, self-monitoring` |
 | `complex` | 重构、架构、全面、详细、调试、审查、refactor、architecture | `full` + `deep-reasoning, self-monitoring` |
 
 ### Real trigger examples
@@ -114,6 +116,12 @@ explicit > ignore > loop > full > length fallback > none
 
 # loop keywords -> loop
 做一个仓库级跨文件重构，并保持全局一致
+
+# workspace-research -> loop (two independent signals)
+深度调研此文件夹下的内容、TODO 和 DDL，梳理现状与潜在风险
+
+# research intent -> full
+调研一下这个技术方案的可行性
 
 # complex keywords -> full
 详细分析一下这个项目的架构，并检查潜在风险
@@ -235,7 +243,7 @@ Configuration lives in the plugin `config`, normally edited in `cordis.patch.yml
         enabled: true
         injectMode: near-field      # near-field | none
         trigger:
-          minScore: 1               # minimum pattern hit count for trigger rules
+          minScore: 1               # threshold only for matchMode: score
           loopChars: 1800           # text longer than this -> loop fallback
           fullChars: 120            # text longer than this -> full fallback
           rules:
@@ -249,11 +257,26 @@ Configuration lives in the plugin `config`, normally edited in `cordis.patch.yml
               action: ignore
               patterns: ["^你好[!。.!？?~～]*$", "^(hello|hi|thanks|ok)[!。.!？?~～]*$"]
 
+            - id: workspace-research
+              action: trigger
+              pass: loop
+              matchMode: all
+              modules: [capacity, broadcast, markers, self-monitoring]
+              patterns:
+                - "文件夹|目录|仓库|代码库|工作区|(?:todo|ddl).*(?:文件|列表|状态)|(?:文件|列表).*(?:todo|ddl)|folder|directory|repository|repo|workspace"
+                - "调研|盘点|梳理|画像|审计|研究|分析|了解|research|survey|audit"
+
             - id: loop
               action: trigger
               pass: loop
               modules: [capacity, broadcast, markers, self-monitoring]
               patterns: ["多阶段|多文件|跨文件|长程|仓库级", "long-horizon|multi-file|repository-wide"]
+
+            - id: research
+              action: trigger
+              pass: full
+              modules: [deep-reasoning, self-monitoring]
+              patterns: ["调研|盘点|梳理|尽调|研究|调查|research|investigate|survey"]
 
             - id: complex
               action: trigger
@@ -306,7 +329,7 @@ dsh-jspace-trigger/
 npm test
 ```
 
-Current status: 24/24 tests pass.
+Current status: 28/28 tests pass.
 
 Not yet done: real-session validation after a DSH restart.
 

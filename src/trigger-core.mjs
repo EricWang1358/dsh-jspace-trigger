@@ -44,12 +44,33 @@ const DEFAULT_RULES = [
     ],
   },
   {
+    // 短消息也可能要求跨文件盘点。两个信号必须同时存在，避免把“看这个文件”误判为 loop。
+    id: 'workspace-research',
+    action: ACTION_TRIGGER,
+    pass: PASS_LOOP,
+    modules: DEFAULT_LOOP_MODULES,
+    matchMode: 'all',
+    patterns: [
+      '文件夹|目录|仓库|代码库|工作区|(?:todo|ddl).*(?:文件|列表|状态)|(?:文件|列表).*(?:todo|ddl)|folder|directory|repository|repo|workspace',
+      '深度调研|调研|盘点|梳理|摸底|画像|审计|清查|研究|调查|分析|了解|research|investigate|survey|inventory|audit|profile',
+    ],
+  },
+  {
     id: 'loop',
     action: ACTION_TRIGGER,
     pass: PASS_LOOP,
     modules: DEFAULT_LOOP_MODULES,
     patterns: [
       '多阶段|多个文件|多轮|长程|长期|仓库级|跨文件|系统化|完整项目|长时|agentic|long-horizon|multi-stage|multi-file|multi-turn|repository-wide|workflow|loop',
+    ],
+  },
+  {
+    id: 'research',
+    action: ACTION_TRIGGER,
+    pass: PASS_FULL,
+    modules: DEFAULT_FULL_MODULES,
+    patterns: [
+      '深度调研|调研|盘点|梳理|摸底|尽调|研究|调查|research|investigate|survey|inventory',
     ],
   },
   {

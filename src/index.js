@@ -45,12 +45,15 @@ export function apply(ctx, config = {}) {
   const cfg = mergeConfig(config)
   const agents = new Map() // session.id -> Agent
   const seen = new Set() // sid:eventId
+  const seenOrder = []
+  const seenIdlessEvents = new WeakSet()
   const metrics = {
     userEvents: 0,
     triggered: 0,
     injected: 0,
     observeOnly: 0,
     inboxFailures: 0,
+    missingAgent: 0,
   }
   const recentHits = []
 
@@ -64,6 +67,17 @@ export function apply(ctx, config = {}) {
       at: new Date().toISOString(),
     })
     if (recentHits.length > 20) recentHits.shift()
+  }
+
+  const rememberDeliveredEvent = (key, event) => {
+    if (key) {
+      if (seen.has(key)) return
+      seen.add(key)
+      seenOrder.push(key)
+      if (seenOrder.length > 2000) seen.delete(seenOrder.shift())
+      return
+    }
+    if (event && typeof event === 'object') seenIdlessEvents.add(event)
   }
 
   // 记录所有装配时可见的 agent，供后续 session/event 找到对应 inbox。
@@ -97,16 +111,21 @@ export function apply(ctx, config = {}) {
       return
     }
 
-    // 同一轮只提示一次
-    const key = `${session?.id}:${event.id}`
-    if (key.includes('undefined') || seen.has(key)) return
-    if (seen.size > 2000) seen.clear()
-    seen.add(key)
-
     // 找到目标 agent 的 inbox
     const current = ctx.get('agent')
     let agent = current && current.session?.id === session?.id ? current : agents.get(session?.id)
-    if (!agent || !agent.inbox) return
+    if (!agent || !agent.inbox) {
+      metrics.missingAgent += 1
+      return
+    }
+
+    // 同一轮只提示一次。无 event.id 时仍允许投递，避免因上游事件形状缺少
+    // id 而把所有命中静默丢弃。
+    const key = session?.id !== undefined && event?.id !== undefined
+      ? `${session.id}:${event.id}`
+      : null
+    if (key && seen.has(key)) return
+    if (!key && event && typeof event === 'object' && seenIdlessEvents.has(event)) return
 
     const guide = buildGuideText(decision, text, cfg, {
       missingSkill: !isSkillInstalled(cfg),
@@ -118,6 +137,7 @@ export function apply(ctx, config = {}) {
         source: { kind: 'plugin', plugin: name },
         content: [{ type: 'text', text: guide }],
       })
+      rememberDeliveredEvent(key, event)
       metrics.injected += 1
     } catch (error) {
       metrics.inboxFailures += 1
@@ -157,6 +177,7 @@ export function apply(ctx, config = {}) {
         `injected=${metrics.injected}`,
         `observeOnly=${metrics.observeOnly}`,
         `inboxFailures=${metrics.inboxFailures}`,
+        `missingAgent=${metrics.missingAgent}`,
         `recentHits=${recentHits.length}`,
       ].join('\n')
     },

@@ -46,6 +46,23 @@ test('loop keywords trigger loop with loop modules', () => {
   assert.deepEqual(d.modules, ['capacity', 'broadcast', 'markers', 'self-monitoring'])
 })
 
+test('short workspace research routes to loop only when scope and synthesis intent are both present', () => {
+  const cfg = createDefaultConfig()
+  const d = evaluateRules(cfg, '深度调研此文件夹下的内容，todo、文件，了解我的画像与潜在的 DDL')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_LOOP)
+  assert.deepEqual(d.matched, ['workspace-research'])
+
+  assert.equal(evaluateRules(cfg, '查看这个文件').action, ACTION_NONE)
+})
+
+test('standalone research intent routes to full', () => {
+  const d = evaluateRules(createDefaultConfig(), '调研一下这个技术方案的可行性')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_FULL)
+  assert.deepEqual(d.matched, ['research'])
+})
+
 test('complex/full keywords trigger full', () => {
   const cfg = createDefaultConfig()
   const d = evaluateRules(cfg, '详细分析一下这个项目的架构')

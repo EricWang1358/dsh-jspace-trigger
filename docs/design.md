@@ -48,7 +48,7 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
 - 未命中任何规则：完全零成本。
 - 支持显式触发：`/j-space` 或“使用 j-space”。
 - 支持忽略规则：寒暄、纯确认、无需推理的任务。
-- 支持优先级：`ignore > loop > full > complex-length > fast`。
+- 支持优先级：`explicit > ignore > workspace-research > loop > research > complex > 长度兜底 > none`。
 - 规则全部可配置，配置改动即时生效或重启后生效（DSH 插件规范决定）。
 
 ## 3. 规则决策流程
@@ -58,13 +58,14 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
   │
   ├─ 1. explicit 规则？          ── 是 → 强制 full/loop
   ├─ 2. ignore/chat 规则？       ── 是 → 不触发（fast，静默）
-  ├─ 3. loop 规则或超长文本？     ── 是 → loop + 推荐模块
-  ├─ 4. full/complex 规则？      ── 是 → full + 推荐模块
-  ├─ 5. 短文本且无规则命中？      ── 不触发
-  └─ 6. 不确定 → 可配置 fallback：none / fast / full
+  ├─ 3. 工作区范围 + 调研意图？   ── 是 → loop + 推荐模块
+  ├─ 4. loop 规则或超长文本？     ── 是 → loop + 推荐模块
+  ├─ 5. 调研/full/complex 规则？  ── 是 → full + 推荐模块
+  ├─ 6. 短文本且无规则命中？      ── 不触发
+  └─ 7. 不确定 → 可配置 fallback：none / fast / full
 ```
 
-优先级按顺序短路：`explicit > ignore > loop > full`；同一档内可做评分，例如多个关键词命中增加置信度。
+优先级按顺序短路：`explicit > ignore > workspace-research > loop > research > complex`；同一档内可做评分，例如多个关键词命中增加置信度。
 
 ## 4. 可配置规则 Schema（草案）
 
@@ -94,6 +95,16 @@ trigger:
         - "^你好[!。.!？?~～]*$"
         - "^(hello|hi|hey|thanks|thank you|ok|okay|好的|嗯|在吗)[!。.!？?~～]*$"
 
+    # 两种独立信号同时出现才判 loop，避免单文件读取被过度触发。
+    - id: workspace-research
+      action: trigger
+      pass: loop
+      matchMode: all
+      modules: [capacity, broadcast, markers, self-monitoring]
+      patterns:
+        - "文件夹|目录|仓库|代码库|工作区|(?:todo|ddl).*(?:文件|列表|状态)|(?:文件|列表).*(?:todo|ddl)|folder|directory|repository|repo|workspace"
+        - "调研|盘点|梳理|画像|审计|研究|分析|了解|research|survey|audit"
+
     - id: loop
       action: trigger
       pass: loop
@@ -101,6 +112,13 @@ trigger:
       patterns:
         - "多阶段|多文件|多轮|长程|长期|仓库级|跨文件|系统化|完整项目|长时"
         - "agentic|long-horizon|multi-stage|multi-file|multi-turn|repository-wide|workflow"
+
+    - id: research
+      action: trigger
+      pass: full
+      modules: [deep-reasoning, self-monitoring]
+      patterns:
+        - "调研|盘点|梳理|尽调|研究|调查|research|investigate|survey"
 
     - id: complex
       action: trigger
@@ -135,6 +153,8 @@ trigger:
 - 默认 `injectMode: near-field`。
 - `ignore/chat` 规则放在最前，防止“谢谢”“好的”被误判。
 - `loop` 规则优先级高于 `complex`：跨文件/长任务即使没出现“复杂”词也走 loop。
+- `workspace-research` 使用 `matchMode: all`：只有“工作区范围”和“调研/综合意图”同时出现才走 loop；单独“查看文件”不会触发。
+- 短文本不等于 fast：`research` 规则让“调研/盘点/梳理”等通常需要多步验证的请求直接走 full。
 - 长度兜底：`fullChars` 和 `loopChars` 只对非 chat 消息生效。
 
 ## 5. 插件实现草图
@@ -173,7 +193,7 @@ export function apply(ctx, config) {
 
 - `src/trigger-core.mjs`：零依赖，纯规则求值，可单测。
 - `src/index.js`：Cordis 插件入口，负责事件监听、注入和注册工具。
-- `tests/`：用 `node:test` 覆盖规则优先级、chat 让位、loop/full 判定、显式触发、去重。
+- `tests/`：用 `node:test` 覆盖规则优先级、chat 让位、短消息的工作区调研、loop/full 判定、显式触发、去重和 agent 事件时序。
 
 ### 建议工具
 

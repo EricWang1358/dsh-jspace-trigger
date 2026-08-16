@@ -90,3 +90,39 @@ test('an agent from another session is never used as a delivery fallback', () =>
 
   assert.equal(appended.length, 0)
 })
+
+test('a match is not permanently dropped when the agent becomes available after the event', async () => {
+  const appended = []
+  const agent = {
+    session: { id: 'session-a' },
+    inbox: { append: (...args) => appended.push(args) },
+  }
+  const { ctx, handlers, tools } = createContext()
+  apply(ctx)
+
+  const event = userEvent('event-1', '请重构这个项目')
+  handlers.get('session/event')({ id: 'session-a' }, event)
+  await handlers.get('system-prompt/assemble')({}, { agent }, async () => 'assembled')
+  handlers.get('session/event')({ id: 'session-a' }, event)
+
+  assert.equal(appended.length, 1)
+  const status = tools.find((tool) => tool.name === 'jspace_trigger_status').execute()
+  assert.match(status, /missingAgent=1/)
+})
+
+test('a matched event without an event id can still be delivered', async () => {
+  const appended = []
+  const agent = {
+    session: { id: 'session-a' },
+    inbox: { append: (...args) => appended.push(args) },
+  }
+  const { ctx, handlers } = createContext(agent)
+  apply(ctx)
+
+  await handlers.get('system-prompt/assemble')({}, { agent }, async () => 'assembled')
+  const event = userEvent(undefined, '请重构这个项目')
+  handlers.get('session/event')({ id: 'session-a' }, event)
+  handlers.get('session/event')({ id: 'session-a' }, event)
+
+  assert.equal(appended.length, 1)
+})
