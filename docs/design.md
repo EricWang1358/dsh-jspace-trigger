@@ -184,18 +184,14 @@ export function apply(ctx, config) {
 
 - 已安装 `dsh-mnemon`：本插件只做 J-Space 触发提示，不碰记忆层，可共存。
 - 已安装 `dsh-super-injector` / `dsh-mode-boost` / `dsh-agent-teams`：本插件不替换 persona、不改工具面，只追加 near-field 文本，冲突风险低。
-- 如果未来用户安装 `dsh-router-standard`：本插件的分类规则与其有重叠；但本插件只负责“J-Space 提示”，不改变行为带，可做共存开关，例如：
-  ```yaml
-  coexist:
-    skipIfRouterStandard: true
-  ```
+- `dsh-router-standard`：在 `weak` 行为带会追加自己的路由引导；若本插件也命中规则，同一轮会出现两条 near-field 引导。两者不争夺 persona 或工具面，但会增加提示噪声。当前不做自动检测或静默；需要 Router Standard 独占 near-field 时，设置 `injectMode: none`。
+- 梁神模式（Liangshen / anchored standard）：首轮锚定阶段会过滤 `source.kind: plugin` 的消息，因此本插件首轮命中只计入指标、不影响锚定；模式晋升后，后续提示可正常参与会话。需要全程纯净轨迹时，同样使用 `injectMode: none`。
 
 ## 7. 待验证/开放问题
 
 1. **near-field 注入是否足够**：模型是否真的会因此主动调用 `skill` 加载 `j-space`？需要真机跑 2-3 个复杂任务验证。
 2. **是否要自动加载 skill**：DSH 插件能否直接触发模型加载 skill 不可控；当前方案是“提示模型按需加载”，不是强制。
 3. **规则误报率**：关键词规则需要样本校准；建议先收集 20-30 条真实消息做干跑测试。
-4. **是否接入 router-standard**：如果用户已装路由套件，可能需要读取其 `dev_router_status` 输出，避免重复/冲突。
 
 ## 8. 参考来源
 

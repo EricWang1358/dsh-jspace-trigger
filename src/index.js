@@ -18,6 +18,11 @@ import {
   formatDecision,
   mergeConfig,
 } from './trigger-core.mjs'
+import {
+  installedSkillPaths,
+  installJSpaceSkill,
+  isSkillInstalled,
+} from './skill-utils.mjs'
 
 export const name = 'dsh-jspace-trigger'
 export const inject = ['tools', 'systemPrompt', 'llm']
@@ -103,7 +108,9 @@ export function apply(ctx, config = {}) {
     let agent = current && current.session?.id === session?.id ? current : agents.get(session?.id)
     if (!agent || !agent.inbox) return
 
-    const guide = buildGuideText(decision, text, cfg)
+    const guide = buildGuideText(decision, text, cfg, {
+      missingSkill: !isSkillInstalled(cfg),
+    })
     try {
       agent.inbox.append('next-step', {
         id: `jspace-trigger-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -142,6 +149,8 @@ export function apply(ctx, config = {}) {
         `loopChars=${cfg.trigger.loopChars}`,
         `fullChars=${cfg.trigger.fullChars}`,
         `rules=${cfg.trigger.rules.length}`,
+        `skillInstalled=${isSkillInstalled(cfg)}`,
+        `installedSkillPaths=${installedSkillPaths(cfg).join(',') || '-'}`,
         `deduplicatedEvents=${seen.size}`,
         `userEvents=${metrics.userEvents}`,
         `triggered=${metrics.triggered}`,
@@ -163,11 +172,46 @@ export function apply(ctx, config = {}) {
     execute(args) {
       const text = String(args?.text ?? '').trim()
       const decision = evaluateRules(cfg, text)
-      const guide = buildGuideText(decision, text, cfg)
+      const missingSkill = !isSkillInstalled(cfg)
+      const guide = buildGuideText(decision, text, cfg, { missingSkill })
       const delivery = decision.action === ACTION_TRIGGER && cfg.injectMode !== INJECT_MODE_NEAR_FIELD
         ? `(not injected: injectMode=${cfg.injectMode})`
         : guide || '(silent)'
-      return `${formatDecision(decision)}\n---\n${delivery}`
+      return `${formatDecision(decision)}\nskillInstalled=${!missingSkill}\n---\n${delivery}`
+    },
+  })
+
+  registerTool({
+    name: 'jspace_install_skill',
+    description: 'Explicitly install the J-Space Cognition Suite skill from its upstream GitHub repo into the DSH skill library. Never runs automatically.',
+    parameters: {
+      force: {
+        type: 'boolean',
+        description: 'Reinstall/overwrite even if the skill already exists (default false).',
+      },
+      root: {
+        type: 'string',
+        description: 'Optional skill root directory to install into. Defaults to the first configured skill root.',
+      },
+    },
+    output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
+    async execute(args) {
+      const preferredRoot = typeof args?.root === 'string' && args.root.trim() ? args.root.trim() : undefined
+      try {
+        const result = await installJSpaceSkill(cfg, {
+          force: args?.force === true,
+          preferredRoot,
+        })
+        if (result.ok) {
+          return `J-Space skill installed at ${result.target}`
+        }
+        if (result.alreadyInstalled) {
+          return `J-Space skill already installed at ${result.target}. Use force:true to reinstall.`
+        }
+        return `Install returned without result: ${JSON.stringify(result)}`
+      } catch (error) {
+        return `Install failed: ${error?.message ?? String(error)}`
+      }
     },
   })
 

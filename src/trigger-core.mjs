@@ -15,6 +15,8 @@ export const ACTION_NONE = 'none'
 export const INJECT_MODE_NEAR_FIELD = 'near-field'
 export const INJECT_MODE_NONE = 'none'
 
+export const MISSING_SKILL_HINT = 'J-Space skill is not installed. Run `jspace_install_skill` to install it.'
+
 export const DEFAULT_LOOP_MODULES = ['capacity', 'broadcast', 'markers', 'self-monitoring']
 export const DEFAULT_FULL_MODULES = ['deep-reasoning', 'self-monitoring']
 
@@ -100,6 +102,9 @@ export function mergeConfig(input) {
       fullChars: nonNegativeInteger(input.trigger?.fullChars, base.trigger.fullChars),
       rules: Array.isArray(input.trigger?.rules) ? input.trigger.rules : base.trigger.rules,
     },
+    skillRoots: Array.isArray(input.skillRoots) ? input.skillRoots : undefined,
+    repoUrl: typeof input.repoUrl === 'string' ? input.repoUrl : undefined,
+    branch: typeof input.branch === 'string' ? input.branch : undefined,
   }
   return out
 }
@@ -237,14 +242,18 @@ export function extractText(data) {
     .trim()
 }
 
-export function buildGuideText(decisionValue, text = '', config = {}) {
+export function buildGuideText(decisionValue, text = '', config = {}, options = {}) {
   if (!decisionValue || decisionValue.action !== ACTION_TRIGGER) return ''
   const cfg = mergeConfig(config)
   const passText = decisionValue.pass ? `J-space pass: ${decisionValue.pass}.` : ''
   const modules = Array.isArray(decisionValue.modules) ? decisionValue.modules : []
   const moduleText = modules.length ? ` Suggested modules: ${modules.join(', ')}.` : ''
   const prefix = cfg.injectMode === INJECT_MODE_NEAR_FIELD ? '[jspace-trigger] ' : ''
-  return `${prefix}${passText}${moduleText} If this task needs structured workspace control, load the \`j-space\` skill and follow its gate.`.trim()
+  let guide = `${prefix}${passText}${moduleText} If this task needs structured workspace control, load the \`j-space\` skill and follow its gate.`.trim()
+  if (options.missingSkill) {
+    guide += `\n${MISSING_SKILL_HINT}`
+  }
+  return guide
 }
 
 export function formatDecision(decisionValue) {

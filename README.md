@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-green?style=flat-square">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-18%2F18-passing-brightgreen?style=flat-square">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-24%2F24-passing-brightgreen?style=flat-square">
 </p>
 
 ---
@@ -50,6 +50,7 @@ This plugin is the middle ground:
 - **Session-safe delivery** — a hit in one session is never delivered to an agent from another session.
 - **Deduplication** — one event triggers at most one nudge.
 - **Observe-only mode** — `injectMode: none` gives pure telemetry without touching the conversation.
+- **Skill detection & guided install** — `jspace_trigger_status` reports whether `j-space` is installed; triggered nudges include a missing-skill hint, and `jspace_install_skill` installs it explicitly.
 - **Runtime metrics** — `jspace_trigger_status` reports events, triggers, injections, and observe-only hits.
 - **Dry-run tool** — `jspace_trigger_test` shows exactly what the current config would do.
 
@@ -86,7 +87,7 @@ dsh --profile web
 dsh --profile web --dump-config | Select-String dsh-jspace-trigger
 ```
 
-After restart, the tools `jspace_trigger_status` and `jspace_trigger_test` are available to the agent.
+After restart, the tools `jspace_trigger_status`, `jspace_trigger_test`, and `jspace_install_skill` are available to the agent.
 
 ## How triggering works today
 
@@ -141,6 +142,7 @@ pass=loop
 modules=capacity,broadcast,markers,self-monitoring
 matched=loop
 reason=rule:loop
+skillInstalled=true
 ---
 [jspace-trigger] J-space pass: loop. Suggested modules: capacity, broadcast, markers, self-monitoring. If this task needs structured workspace control, load the `j-space` skill and follow its gate.
 ```
@@ -155,6 +157,71 @@ config:
 ```
 
 In this mode matched events are recorded in `jspace_trigger_status` but **never injected** into any session.
+
+## Skill detection & installation
+
+The plugin never downloads or installs J-Space automatically. It only checks and helps when you ask.
+
+- `jspace_trigger_status` reports `skillInstalled` and installed paths.
+- When the skill is missing, triggered nudges append:
+  ```text
+  J-Space skill is not installed. Run `jspace_install_skill` to install it.
+  ```
+- `jspace_install_skill` explicitly clones the upstream repository and copies `j-space/` into your configured skill root.
+
+### Install the skill manually
+
+```powershell
+jspace_install_skill
+```
+
+To force a reinstall:
+
+```powershell
+jspace_install_skill force=true
+```
+
+To install into a custom root:
+
+```powershell
+jspace_install_skill root="C:\path\to\skills"
+```
+
+## Coexistence with routing presets
+
+This plugin does not change a preset's persona or tool surface. It only appends a
+near-field message after a matched real user message. The following combinations
+therefore have no tool-name or system-prompt collision, but may affect whether a
+guide is visible to the model.
+
+### Router Standard
+
+When Router Standard selects its `weak` band, it appends its own routing guide
+after each real user message. If a J-Space rule also matches, the session can
+receive **two** near-field guides: Router Standard's build/fix guidance and this
+plugin's J-Space suggestion.
+
+`dsh-jspace-trigger` deliberately does not detect or mute Router Standard. If
+you want Router Standard to be the only near-field guide, use observe-only mode:
+
+```yaml
+config:
+  injectMode: none
+```
+
+Otherwise, the two messages are compatible but add prompt noise. This is most
+likely for a `weak`-band task containing J-Space complexity keywords such as
+`详细` or `分析`.
+
+### 梁神模式 (Liangshen / anchored standard)
+
+梁神模式的首轮锚定阶段只允许真实用户消息到达模型。本插件的提示使用
+`source.kind: plugin`，因此即使规则命中，首轮提示也会被梁神模式过滤；这
+保护了它的 Minimal 锚定，不是错误。模式晋升后，本插件的后续提示可以正常
+参与会话。
+
+如果你要保持全程最纯净的梁神模式轨迹，同样建议使用 `injectMode: none`；
+如果希望在完成首轮锚定后获得 J-Space 建议，则保持默认 `near-field` 即可。
 
 ## Configuration
 
@@ -193,6 +260,13 @@ Configuration lives in the plugin `config`, normally edited in `cordis.patch.yml
               pass: full
               modules: [deep-reasoning, self-monitoring]
               patterns: ["重构|架构|全面|调试|审查", "refactor|architecture|debug|review"]
+
+        # Optional: skill install/check settings
+        skillRoots:
+          - ~/.agents/skills
+          - ~/.dsh/skills
+        repoUrl: https://github.com/Tiger3807861189/J-Space-Cognition-Suite-V3.6.git
+        branch: main
 ```
 
 ### Rule fields
@@ -209,8 +283,9 @@ Configuration lives in the plugin `config`, normally edited in `cordis.patch.yml
 
 | Tool | Purpose |
 | --- | --- |
-| `jspace_trigger_status` | Show config, counters, and recent hit count |
+| `jspace_trigger_status` | Show config, counters, skill installation state, and recent hit count |
 | `jspace_trigger_test <text>` | Dry-run a message through the current rules |
+| `jspace_install_skill` | Explicitly install/repair the J-Space skill from upstream |
 
 ## Project structure
 
@@ -218,6 +293,7 @@ Configuration lives in the plugin `config`, normally edited in `cordis.patch.yml
 dsh-jspace-trigger/
 ├── docs/design.md               # research + rule design
 ├── src/trigger-core.mjs         # pure rule engine (zero dependencies)
+├── src/skill-utils.mjs          # skill detection + explicit installer
 ├── src/index.js                 # DSH plugin entry
 ├── index.js                     # package entry
 ├── cordis.patch.yml             # DSH bundle mount
@@ -230,7 +306,7 @@ dsh-jspace-trigger/
 npm test
 ```
 
-Current status: 18/18 tests pass.
+Current status: 24/24 tests pass.
 
 Not yet done: real-session validation after a DSH restart.
 

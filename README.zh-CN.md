@@ -15,7 +15,7 @@
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-green?style=flat-square">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-18%2F18-passing-brightgreen?style=flat-square">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-24%2F24-passing-brightgreen?style=flat-square">
 </p>
 
 ---
@@ -50,6 +50,7 @@
 - **跨会话安全投递** —— 某个会话的命中绝不会投递给另一个会话的 agent。
 - **去重** —— 同一条事件最多触发一次提示。
 - **仅观测模式** —— `injectMode: none` 只产生遥测，不碰对话。
+- **Skill 检测与引导安装** —— `jspace_trigger_status` 会报告 `j-space` 是否已安装；未安装时触发提示会附带安装提示，`jspace_install_skill` 可显式安装。
 - **运行指标** —— `jspace_trigger_status` 显示事件数、触发数、注入数和 observe-only 命中数。
 - **干跑工具** —— `jspace_trigger_test` 显示当前配置下某条消息会得到什么结果。
 
@@ -86,7 +87,7 @@ dsh --profile web
 dsh --profile web --dump-config | Select-String dsh-jspace-trigger
 ```
 
-重启后，agent 会看到 `jspace_trigger_status` 和 `jspace_trigger_test` 两个工具。
+重启后，agent 会看到 `jspace_trigger_status`、`jspace_trigger_test` 和 `jspace_install_skill` 三个工具。
 
 ## 当前触发方式
 
@@ -141,6 +142,7 @@ pass=loop
 modules=capacity,broadcast,markers,self-monitoring
 matched=loop
 reason=rule:loop
+skillInstalled=true
 ---
 [jspace-trigger] J-space pass: loop. Suggested modules: capacity, broadcast, markers, self-monitoring. If this task needs structured workspace control, load the `j-space` skill and follow its gate.
 ```
@@ -155,6 +157,35 @@ config:
 ```
 
 该模式下，命中事件仍会计入 `jspace_trigger_status`，但**永远不会注入任何会话**。
+
+## Skill 检测与安装
+
+插件**不会自动下载或安装** J-Space，只做检测和显式安装：
+
+- `jspace_trigger_status` 会报告 `skillInstalled` 和已安装路径。
+- 未安装时，触发提示会追加：
+  ```text
+  J-Space skill is not installed. Run `jspace_install_skill` to install it.
+  ```
+- `jspace_install_skill` 会从上游仓库克隆并复制 `j-space/` 到你的技能库。
+
+手动安装：
+
+```powershell
+jspace_install_skill
+```
+
+强制重装：
+
+```powershell
+jspace_install_skill force=true
+```
+
+安装到自定义目录：
+
+```powershell
+jspace_install_skill root="C:\path\to\skills"
+```
 
 ## 配置
 
@@ -193,6 +224,13 @@ config:
               pass: full
               modules: [deep-reasoning, self-monitoring]
               patterns: ["重构|架构|全面|调试|审查", "refactor|architecture|debug|review"]
+
+        # 可选：Skill 安装/检测配置
+        skillRoots:
+          - ~/.agents/skills
+          - ~/.dsh/skills
+        repoUrl: https://github.com/Tiger3807861189/J-Space-Cognition-Suite-V3.6.git
+        branch: main
 ```
 
 ### 规则字段
@@ -209,8 +247,9 @@ config:
 
 | 工具 | 作用 |
 | --- | --- |
-| `jspace_trigger_status` | 查看配置、计数器和近期命中数 |
+| `jspace_trigger_status` | 查看配置、计数器、Skill 安装状态和近期命中数 |
 | `jspace_trigger_test <text>` | 用当前规则干跑一条消息，显示决策结果 |
+| `jspace_install_skill` | 显式安装/修复 J-Space Skill |
 
 ## 项目结构
 
@@ -218,6 +257,7 @@ config:
 dsh-jspace-trigger/
 ├── docs/design.md               # 调研 + 规则设计
 ├── src/trigger-core.mjs         # 纯规则引擎（零依赖）
+├── src/skill-utils.mjs          # Skill 检测 + 显式安装
 ├── src/index.js                 # DSH 插件入口
 ├── index.js                     # 包入口
 ├── cordis.patch.yml             # DSH bundle 装配
@@ -230,7 +270,7 @@ dsh-jspace-trigger/
 npm test
 ```
 
-当前状态：18/18 测试通过。
+当前状态：24/24 测试通过。
 
 尚未完成：DSH 重启后的真机会话触发验证。
 
