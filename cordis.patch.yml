@@ -1,0 +1,8 @@
+# dsh-jspace-trigger bundle patch
+#
+# 轻量条件触发插件：只在命中可配置规则时 near-field 提示加载 j-space。
+# 默认不注入、不强制生效。
+- insert:
+    - id: jspace-trigger
+      name: dsh-jspace-trigger
+      config: {}

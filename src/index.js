@@ -1,0 +1,134 @@
+// dsh-jspace-trigger: 可配置规则触发的 J-Space 轻量 DSH 插件。
+//
+// 设计要点：
+// - 不做全局/每次会话强制注入；
+// - 只监听真实用户消息；
+// - 命中规则时才向 agent inbox 追加一条 near-field 提示；
+// - 未命中规则时完全静默。
+//
+// 参考 dsh-routing-suite / dsh-router-jspace 的 `session/event` +
+// `agent.inbox.append('next-step', ...)` 近场引导模式。
+
+import {
+  ACTION_TRIGGER,
+  buildGuideText,
+  evaluateRules,
+  extractText,
+  formatDecision,
+  mergeConfig,
+} from './trigger-core.mjs'
+
+export const name = 'dsh-jspace-trigger'
+export const inject = ['tools', 'systemPrompt', 'llm']
+
+function toJsonSchema(spec) {
+  if (!spec) return { type: 'object', properties: {}, additionalProperties: false }
+  const properties = {}
+  const required = []
+  for (const [key, meta] of Object.entries(spec)) {
+    const prop = { type: meta.type }
+    if (Array.isArray(meta.enum)) prop.enum = meta.enum
+    if (meta.description) prop.description = meta.description
+    properties[key] = prop
+    if (meta.required) required.push(key)
+  }
+  return { type: 'object', properties, required, additionalProperties: false }
+}
+
+export function apply(ctx, config = {}) {
+  const cfg = mergeConfig(config)
+  const agents = new Map() // session.id -> Agent
+  const seen = new Set() // sid:eventId
+
+  // 记录所有装配时可见的 agent，供后续 session/event 找到对应 inbox。
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const assembled = await next()
+    const agent = context?.agent
+    if (agent?.session?.id) {
+      agents.set(agent.session.id, agent)
+    }
+    return assembled
+  })
+
+  ctx.on('session/event', (session, event) => {
+    if (event?.type !== 'user/message') return
+    const data = event.data ?? {}
+    if (data.source?.kind !== 'user') return
+
+    const text = extractText(data)
+    if (!text) return
+
+    const decision = evaluateRules(cfg, text)
+    if (decision.action !== ACTION_TRIGGER) return
+
+    // 同一轮只提示一次
+    const key = `${session?.id}:${event.id}`
+    if (key.includes('undefined') || seen.has(key)) return
+    if (seen.size > 2000) seen.clear()
+    seen.add(key)
+
+    // 找到目标 agent 的 inbox
+    const current = ctx.get('agent')
+    let agent = current && current.session?.id === session?.id ? current : agents.get(session?.id)
+    if (!agent && current) agent = current
+    if (!agent || !agent.inbox) return
+
+    const guide = buildGuideText(decision, text, cfg)
+    try {
+      agent.inbox.append('next-step', {
+        id: `jspace-trigger-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        source: { kind: 'plugin', plugin: name },
+        content: [{ type: 'text', text: guide }],
+      })
+    } catch (error) {
+      ctx.logger?.warn?.(`[${name}] inbox append failed: ${error?.message ?? error}`)
+    }
+  })
+
+  const registerTool = (tool) => {
+    try {
+      ctx.effect(() => ctx.tools.register({
+        ...tool,
+        parameters: toJsonSchema(tool.parameters),
+      }))
+    } catch {
+      // 重复注册/工具注册表不可用时跳过
+    }
+  }
+
+  registerTool({
+    name: 'jspace_trigger_status',
+    description: "Show dsh-jspace-trigger configuration, rule count and recent hit count.",
+    parameters: {},
+    output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
+    execute() {
+      return [
+        `enabled=${cfg.enabled}`,
+        `injectMode=${cfg.injectMode}`,
+        `minScore=${cfg.trigger.minScore}`,
+        `loopChars=${cfg.trigger.loopChars}`,
+        `fullChars=${cfg.trigger.fullChars}`,
+        `rules=${cfg.trigger.rules.length}`,
+        `seen=${seen.size}`,
+      ].join('\n')
+    },
+  })
+
+  registerTool({
+    name: 'jspace_trigger_test',
+    description: 'Dry-run a message through the configurable J-Space trigger rules and show the decision + guide text.',
+    parameters: {
+      text: { type: 'string', required: true, description: 'Message text to test' },
+    },
+    output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
+    execute(args) {
+      const text = String(args?.text ?? '').trim()
+      const decision = evaluateRules(cfg, text)
+      const guide = buildGuideText(decision, text, cfg)
+      return `${formatDecision(decision)}\n---\n${guide || '(silent)'}`
+    },
+  })
+
+  ctx.logger?.info?.('[dsh-jspace-trigger] active')
+}
