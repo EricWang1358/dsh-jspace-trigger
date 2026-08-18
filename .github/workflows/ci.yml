@@ -32,7 +32,7 @@ jobs:
         run: node scripts/check.mjs
 
       - name: Run test suite
-        run: node --test "tests/*.test.mjs"
+        run: node --test
 
   security:
     name: supply-chain scan (npm audit)

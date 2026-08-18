@@ -61,10 +61,10 @@
     "@deepseek-ai/dsh-session": { "optional": true }
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.mjs\"",
-    "test:coverage": "node --test --experimental-test-coverage \"tests/*.test.mjs\"",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
     "check": "node scripts/check.mjs",
-    "build": "node scripts/check.mjs && npm test",
+    "build": "node scripts/check.mjs && node --test",
     "prepack": "node scripts/check.mjs"
   }
 }
