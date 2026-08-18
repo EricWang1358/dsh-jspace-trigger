@@ -67,8 +67,8 @@ const DEFAULT_RULES = [
     modules: DEFAULT_LOOP_MODULES,
     matchMode: 'all',
     patterns: [
-      '文件夹|目录|仓库|代码库|工作区|(?:todo|ddl).*(?:文件|列表|状态)|(?:文件|列表).*(?:todo|ddl)|folder|directory|repository|repo|workspace',
-      '深度调研|调研|盘点|梳理|摸底|画像|审计|清查|研究|调查|分析|了解|research|investigate|survey|inventory|audit|profile',
+      '文件夹|目录|仓库|代码库|工作区|工作流|整个项目|整个仓库|(?:todo|ddl).*(?:文件|列表|状态)|(?:文件|列表).*(?:todo|ddl)|folder|directory|repository|repo|workspace|codebase|workflow',
+      '深度调研|调研|盘点|梳理|摸底|画像|审计|清查|研究|调查|评估|对比|考察|research|investigate|survey|inventory|audit|profile|assess|evaluate|compare',
     ],
   },
   {
@@ -77,7 +77,7 @@ const DEFAULT_RULES = [
     pass: PASS_LOOP,
     modules: DEFAULT_LOOP_MODULES,
     patterns: [
-      '多阶段|多个文件|多轮|长程|长期|仓库级|跨文件|系统化|完整项目|长时|agentic|long-horizon|multi-stage|multi-file|multi-turn|repository-wide|workflow|loop',
+      '多阶段|多个文件|多文件|多轮|长程|长期|仓库级|跨文件|系统化|完整项目|长时|端到端|全流程|全局一致|多个模块|批量|agentic|long-horizon|multi-stage|multi-file|multi-turn|repository-wide|workflow|loop|end-to-end|series of tasks',
     ],
   },
   {
@@ -86,7 +86,7 @@ const DEFAULT_RULES = [
     pass: PASS_FULL,
     modules: DEFAULT_FULL_MODULES,
     patterns: [
-      '深度调研|调研|盘点|梳理|摸底|尽调|研究|调查|research|investigate|survey|inventory',
+      '深度调研|调研|盘点|梳理|摸底|尽调|研究|调查|考察|评估|对比|研究方案|可行性|research|investigate|survey|inventory|assess|evaluate|compare|benchmark|feasibility',
     ],
   },
   {
@@ -95,7 +95,7 @@ const DEFAULT_RULES = [
     pass: PASS_FULL,
     modules: DEFAULT_FULL_MODULES,
     patterns: [
-      '重构|架构|全面|详细|设计|系统|优化|分析|审查|调试|排查|报错|修复|refactor|architecture|comprehensive|detailed|design|system|optimize|analyze|review|debug|fix',
+      '重构|架构|全面|详细|深入|透彻|严谨|推敲|权衡|复盘|设计|系统|系统优化|架构优化|优化方案|审查|评审|调试|排查|排查报错|分析报错|调试报错|修复|方案|设计文档|报告|规划|refactor|architecture|comprehensive|detailed|in-depth|thorough|rigorous|trade-off|retrospective|design|system|optimize|analyze|review|debug|fix|deep-dive|root cause|feasibility',
     ],
   },
 ]

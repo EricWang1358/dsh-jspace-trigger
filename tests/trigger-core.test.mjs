@@ -108,6 +108,60 @@ test('complex/full keywords trigger full', () => {
   assert.ok(d.modules.includes('deep-reasoning'))
 })
 
+test('new Chinese complexity keywords route to full (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  for (const text of ['深入分析根因', '请做一个严谨的权衡', '复盘这次事故并给方案']) {
+    const d = evaluateRules(cfg, text)
+    assert.equal(d.action, ACTION_TRIGGER, text)
+    assert.equal(d.pass, PASS_FULL, text)
+  }
+})
+
+test('new English complexity keywords route to full (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  for (const text of ['do an in-depth root-cause analysis', 'weigh the trade-offs rigorously']) {
+    const d = evaluateRules(cfg, text)
+    assert.equal(d.action, ACTION_TRIGGER, text)
+    assert.equal(d.pass, PASS_FULL, text)
+  }
+})
+
+test('new Chinese loop keywords route to loop (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  const d = evaluateRules(cfg, '做一个端到端全流程重构，保持全局一致')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_LOOP)
+})
+
+test('new English loop keywords route to loop (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  const d = evaluateRules(cfg, 'implement an end-to-end series of tasks')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_LOOP)
+})
+
+test('new Chinese research keywords route to full (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  const d = evaluateRules(cfg, '评估一下这个方案的可行性并对比竞品')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_FULL)
+})
+
+test('new English research keywords route to full (A-plan expansion)', () => {
+  const cfg = createDefaultConfig()
+  const d = evaluateRules(cfg, 'benchmark feasibility and compare alternatives')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.pass, PASS_FULL)
+})
+
+test('everyday single-step phrasing still stays silent (false-positive guards)', () => {
+  const cfg = createDefaultConfig()
+  for (const text of ['查看这个文件', '你好', '优化这个变量名', '把报错信息复制给我']) {
+    const d = evaluateRules(cfg, text)
+    assert.notEqual(d.action, ACTION_TRIGGER, text)
+  }
+})
+
 test('length fallback: long non-chat text triggers full/loop', () => {
   const cfg = createDefaultConfig()
   const text = 'x'.repeat(200)
