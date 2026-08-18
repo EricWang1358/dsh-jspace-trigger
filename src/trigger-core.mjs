@@ -2,7 +2,7 @@
 //
 // 设计目标：不搞一刀切注入。
 // 优先级（默认按 rules 数组顺序短路）：
-//   explicit > ignore > loop > full > 长度兜底 > none
+//   explicit opt-out > explicit opt-in > ignore > loop > full > 长度兜底 > none
 
 export const PASS_FAST = 'fast'
 export const PASS_FULL = 'full'
@@ -16,11 +16,21 @@ export const INJECT_MODE_NEAR_FIELD = 'near-field'
 export const INJECT_MODE_NONE = 'none'
 
 export const MISSING_SKILL_HINT = 'J-Space skill is not installed. Run `jspace_install_skill` to install it.'
-
 export const DEFAULT_LOOP_MODULES = ['capacity', 'broadcast', 'markers', 'self-monitoring']
 export const DEFAULT_FULL_MODULES = ['deep-reasoning', 'self-monitoring']
 
 const DEFAULT_RULES = [
+  {
+    // A direct refusal is stronger than any content-based complexity signal.
+    id: 'jspace-optout',
+    action: ACTION_IGNORE,
+    pass: PASS_FAST,
+    modules: [],
+    patterns: [
+      '(?:不要|不需要|无需|别|禁止)\\s*(?:使用|use|加载|load)?\\s*(?:j-space|/j-space)',
+      "(?:don't|do not|no)\\s+(?:use|load)\\s+(?:j-space|/j-space)",
+    ],
+  },
   {
     id: 'explicit',
     action: ACTION_TRIGGER,
@@ -32,6 +42,12 @@ const DEFAULT_RULES = [
       '启用 j-space',
       '加载 j-space',
       'load j-space',
+    ],
+    // A request that explicitly declines J-Space must not be mistaken for an
+    // explicit opt-in just because it contains the skill name.
+    excludePatterns: [
+      '(?:不要|不需要|无需|别|禁止)\\s*(?:使用|use|加载|load)?\\s*(?:j-space|/j-space)',
+      "(?:don't|do not|no)\\s+(?:use|load)\\s+(?:j-space|/j-space)",
     ],
   },
   {
@@ -88,6 +104,12 @@ export function createDefaultConfig() {
   return {
     enabled: true,
     injectMode: INJECT_MODE_NEAR_FIELD,
+    analytics: {
+      // Keep a small local funnel. It contains rule and tool metadata only,
+      // never prompt text or tool arguments.
+      enabled: true,
+      maxRecords: 50,
+    },
     trigger: {
       minScore: 1,
       loopChars: 1800,
@@ -117,6 +139,10 @@ export function mergeConfig(input) {
   const out = {
     enabled: input.enabled !== false,
     injectMode: normalizeInjectMode(input.injectMode, base.injectMode),
+    analytics: {
+      enabled: input.analytics?.enabled !== false,
+      maxRecords: Math.min(500, positiveInteger(input.analytics?.maxRecords, base.analytics.maxRecords)),
+    },
     trigger: {
       minScore: positiveInteger(input.trigger?.minScore, base.trigger.minScore),
       loopChars: nonNegativeInteger(input.trigger?.loopChars, base.trigger.loopChars),
@@ -141,6 +167,24 @@ function compilePattern(pattern) {
   }
 }
 
+/**
+ * Precompile one rule into reusable regexes. Every evaluation pass shares these
+ * compiled regexes, so a hot `session/event` stream never re-parses rule
+ * sources. Returns `null` for a rule with no valid pattern (still evaluated for
+ * its action, e.g. `excludePatterns`-only opt-outs).
+ */
+function compileRule(rule) {
+  const patterns = Array.isArray(rule?.patterns) ? rule.patterns : []
+  const regexes = patterns
+    .map((pattern) => ({ pattern, regex: compilePattern(pattern) }))
+    .filter((entry) => entry.regex !== null)
+  const excludePatterns = Array.isArray(rule?.excludePatterns) ? rule.excludePatterns : []
+  const exclusions = excludePatterns
+    .map((pattern) => ({ pattern, regex: compilePattern(pattern) }))
+    .filter((entry) => entry.regex !== null)
+  return { id: rule?.id, action: rule?.action, pass: rule?.pass, modules: rule?.modules, matchMode: rule?.matchMode, minScore: rule?.minScore, regexes, exclusions, validPatterns: regexes.length }
+}
+
 function hitCount(regex, text) {
   try {
     regex.lastIndex = 0
@@ -153,19 +197,28 @@ function hitCount(regex, text) {
   }
 }
 
-function matchRule(rule, text, minScore) {
-  const patterns = Array.isArray(rule?.patterns) ? rule.patterns : []
-  const regexes = patterns
-    .map((pattern) => ({ pattern, regex: compilePattern(pattern) }))
-    .filter((entry) => entry.regex !== null)
+function matchCompiledRule(compiled, text, minScore) {
+  const excludedPatterns = compiled.exclusions
+    .filter(({ regex }) => hitCount(regex, text) > 0)
+    .map(({ pattern }) => pattern)
 
-  if (regexes.length === 0) {
-    return { matched: false, hits: 0, matchedPatterns: [] }
+  if (excludedPatterns.length > 0) {
+    return {
+      matched: false,
+      hits: 0,
+      matchedPatterns: [],
+      excludedPatterns,
+      threshold: null,
+      validPatterns: compiled.validPatterns,
+    }
   }
 
-  const mode = rule.matchMode ?? 'any'
+  if (compiled.regexes.length === 0) {
+    return { matched: false, hits: 0, matchedPatterns: [], excludedPatterns, threshold: null, validPatterns: 0 }
+  }
 
-  const matches = regexes.map(({ pattern, regex }) => ({ pattern, hits: hitCount(regex, text) }))
+  const mode = compiled.matchMode ?? 'any'
+  const matches = compiled.regexes.map(({ pattern, regex }) => ({ pattern, hits: hitCount(regex, text) }))
 
   if (mode === 'all') {
     const ok = matches.every(({ hits }) => hits > 0)
@@ -173,15 +226,22 @@ function matchRule(rule, text, minScore) {
       matched: ok,
       hits: ok ? matches.reduce((sum, entry) => sum + entry.hits, 0) : 0,
       matchedPatterns: ok ? matches.map(({ pattern }) => pattern) : [],
+      excludedPatterns,
+      threshold: compiled.regexes.length,
+      validPatterns: compiled.validPatterns,
     }
   }
 
   if (mode === 'score') {
     const hits = matches.reduce((sum, entry) => sum + entry.hits, 0)
+    const threshold = positiveInteger(compiled.minScore, minScore)
     return {
-      matched: hits >= minScore,
+      matched: hits >= threshold,
       hits,
       matchedPatterns: matches.filter(({ hits }) => hits > 0).map(({ pattern }) => pattern),
+      excludedPatterns,
+      threshold,
+      validPatterns: compiled.validPatterns,
     }
   }
 
@@ -191,19 +251,51 @@ function matchRule(rule, text, minScore) {
     matched: hits > 0,
     hits,
     matchedPatterns: matches.filter(({ hits }) => hits > 0).map(({ pattern }) => pattern),
+    excludedPatterns,
+    threshold: 1,
+    validPatterns: compiled.validPatterns,
   }
 }
 
-function decision(action, pass, modules, matched, reason, hitCount = 0) {
-  return { action, pass, modules, matched, reason, hitCount }
+function decision(action, pass, modules, matched, reason, evidence = {}) {
+  return {
+    action,
+    pass,
+    modules,
+    matched,
+    reason,
+    hitCount: evidence.hitCount ?? 0,
+    matchedPatterns: evidence.matchedPatterns ?? [],
+    matchMode: evidence.matchMode ?? null,
+    threshold: evidence.threshold ?? null,
+    validPatterns: evidence.validPatterns ?? 0,
+  }
 }
 
-export function isChatTask(text) {
+// 内置安全规则：显式拒绝必须永远高于任何内容复杂度信号，且不能被自定义
+// rules 数组意外覆盖掉。`chat` 同理保留为硬兜底，但允许通过配置覆盖关键词。
+const BUILTIN_OPTOUT_ID = 'jspace-optout'
+const BUILTIN_OPTOUT_RULE = DEFAULT_RULES.find((rule) => rule.id === BUILTIN_OPTOUT_ID)
+const BUILTIN_CHAT_RULE = DEFAULT_RULES.find((rule) => rule.id === 'chat')
+
+/**
+ * 组装实际求值用的规则序列：
+ *   1. 内置 opt-out（永远第一，保证“显式拒绝 > 一切”）。
+ *   2. 用户/默认 rules（去掉与内置 opt-out 重复的同 id 项，避免被覆盖）。
+ */
+function resolveRules(configuredRules) {
+  const userRules = Array.isArray(configuredRules) ? configuredRules.filter((r) => r?.id !== BUILTIN_OPTOUT_ID) : []
+  const compiled = [BUILTIN_OPTOUT_RULE, ...userRules].map(compileRule)
+  return compiled
+}
+
+export function isChatTask(text, config = {}) {
   const t = String(text ?? '').trim()
   if (!t) return true
-  const chatRule = DEFAULT_RULES.find((rule) => rule.id === 'chat')
-  const result = matchRule(chatRule, t, 1)
-  return result.matched
+  const cfg = mergeConfig(config)
+  const chatRule = cfg.trigger.rules.find((rule) => rule?.id === 'chat') || BUILTIN_CHAT_RULE
+  const compiled = compileRule(chatRule)
+  return matchCompiledRule(compiled, t, 1).matched
 }
 
 export function evaluateRules(config, text) {
@@ -211,17 +303,17 @@ export function evaluateRules(config, text) {
   const t = String(text ?? '').trim()
 
   if (!cfg.enabled) {
-    return decision(ACTION_NONE, PASS_FAST, [], [], 'disabled', 0)
+    return decision(ACTION_NONE, PASS_FAST, [], [], 'disabled')
   }
   if (!t) {
-    return decision(ACTION_NONE, PASS_FAST, [], [], 'empty', 0)
+    return decision(ACTION_NONE, PASS_FAST, [], [], 'empty')
   }
 
-  const rules = Array.isArray(cfg.trigger.rules) ? cfg.trigger.rules : []
   const minScore = cfg.trigger.minScore
+  const compiledRules = resolveRules(cfg.trigger.rules)
 
-  for (const rule of rules) {
-    const matched = matchRule(rule, t, minScore)
+  for (const rule of compiledRules) {
+    const matched = matchCompiledRule(rule, t, minScore)
     if (!matched.matched) continue
     const action = rule.action || ACTION_TRIGGER
     const pass = rule.pass || (action === ACTION_IGNORE ? PASS_FAST : null)
@@ -232,33 +324,52 @@ export function evaluateRules(config, text) {
       modules,
       [rule.id || matched.matchedPatterns[0] || 'matched'],
       `rule:${rule.id || 'matched'}`,
-      matched.hits,
+      {
+        hitCount: matched.hits,
+        matchedPatterns: matched.matchedPatterns,
+        matchMode: rule.matchMode ?? 'any',
+        threshold: matched.threshold,
+        validPatterns: matched.validPatterns,
+      },
     )
   }
 
   // 规则未命中：chat 让位、长度兜底
-  if (isChatTask(t)) {
-    return decision(ACTION_NONE, PASS_FAST, [], [], 'chat', 0)
+  if (isChatTask(t, cfg)) {
+    return decision(ACTION_NONE, PASS_FAST, [], [], 'chat')
   }
 
   const len = t.length
   if (cfg.trigger.loopChars > 0 && len > cfg.trigger.loopChars) {
-    return decision(ACTION_TRIGGER, PASS_LOOP, DEFAULT_LOOP_MODULES, ['length-loop'], 'length-loop', 0)
+    return decision(ACTION_TRIGGER, PASS_LOOP, DEFAULT_LOOP_MODULES, ['length-loop'], 'length-loop', {
+      threshold: cfg.trigger.loopChars,
+    })
   }
   if (cfg.trigger.fullChars > 0 && len > cfg.trigger.fullChars) {
-    return decision(ACTION_TRIGGER, PASS_FULL, DEFAULT_FULL_MODULES, ['length-full'], 'length-full', 0)
+    return decision(ACTION_TRIGGER, PASS_FULL, DEFAULT_FULL_MODULES, ['length-full'], 'length-full', {
+      threshold: cfg.trigger.fullChars,
+    })
   }
 
-  return decision(ACTION_NONE, PASS_FAST, [], [], 'no-rule', 0)
+  return decision(ACTION_NONE, PASS_FAST, [], [], 'no-rule')
 }
 
 export function extractText(data) {
   if (!data) return ''
+  // DSH `user/message` data is a UserMessage { content: ContentBlock[] }.
+  // Older harness payloads wrapped it under `data.message`; accept both.
   const payload =
     data && typeof data.message === 'object' && data.message !== null ? data.message : data
   const content = Array.isArray(payload.content) ? payload.content : []
   return content
-    .map((c) => (typeof c === 'string' ? c : (c?.text ?? '')))
+    .map((block) => {
+      if (typeof block === 'string') return block
+      if (block && typeof block === 'object') {
+        if (typeof block.text === 'string') return block.text
+        if (typeof block.content === 'string') return block.content
+      }
+      return ''
+    })
     .join(' ')
     .trim()
 }
@@ -285,5 +396,9 @@ export function formatDecision(decisionValue) {
     `modules=${(decisionValue.modules ?? []).join(',') || '-'}`,
     `matched=${(decisionValue.matched ?? []).join(',') || '-'}`,
     `reason=${decisionValue.reason ?? '-'}`,
+    `matchMode=${decisionValue.matchMode ?? '-'}`,
+    `hits=${decisionValue.hitCount ?? 0}`,
+    `threshold=${decisionValue.threshold ?? '-'}`,
+    `signals=${(decisionValue.matchedPatterns ?? []).join(' | ') || '-'}`,
   ].join('\n')
 }

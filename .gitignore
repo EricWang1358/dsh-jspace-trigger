@@ -1,6 +1,30 @@
-﻿node_modules/
+# Dependencies
+node_modules/
 lib/
 dist/
+
+# Build artifacts
 *.tgz
+*.log
+
+# Tooling / editor state
 .dsh/
 .jspace/
+.vscode/
+.idea/
+*.swp
+
+# Env / secrets (never commit credentials)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# OS noise
+Thumbs.db
+.DS_Store

@@ -1,0 +1,15 @@
+# Normalize line endings and keep scripts executable on checkouts.
+* text=auto
+
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.ts   text eol=lf
+*.d.ts text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.sh   text eol=lf
+
+*.bat  text eol=crlf
+*.ps1  text eol=crlf

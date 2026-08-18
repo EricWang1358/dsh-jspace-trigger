@@ -38,6 +38,43 @@ test('explicit /j-space triggers loop', () => {
   assert.ok(d.modules.includes('capacity'))
 })
 
+test('an explicit J-Space opt-out does not accidentally trigger the explicit rule', () => {
+  const d = evaluateRules(createDefaultConfig(), '这一步不需要使用 j-space')
+  assert.equal(d.action, ACTION_IGNORE)
+  assert.equal(d.reason, 'rule:jspace-optout')
+})
+
+test('built-in opt-out still wins even when custom rules replace the defaults', () => {
+  const cfg = mergeConfig({
+    trigger: {
+      rules: [
+        { id: 'explicit', action: ACTION_TRIGGER, pass: PASS_LOOP, modules: [], patterns: ['j-space', '/j-space'] },
+      ],
+    },
+  })
+  const refusal = evaluateRules(cfg, '不要使用 j-space')
+  assert.equal(refusal.action, ACTION_IGNORE)
+  assert.equal(refusal.reason, 'rule:jspace-optout')
+
+  const ask = evaluateRules(cfg, '请使用 j-space 处理')
+  assert.equal(ask.action, ACTION_TRIGGER)
+  assert.equal(ask.pass, PASS_LOOP)
+})
+
+test('chat detection reads a configured chat rule instead of the hardcoded default', () => {
+  const cfg = mergeConfig({
+    trigger: {
+      rules: [
+        { id: 'chat', action: ACTION_IGNORE, patterns: ['^嗨嗨$'] },
+        { id: 'complex', action: ACTION_TRIGGER, pass: PASS_FULL, modules: [], patterns: ['分析'] },
+      ],
+    },
+  })
+  assert.equal(evaluateRules(cfg, '嗨嗨').action, ACTION_IGNORE)
+  // The hardcoded greeting list no longer applies once a chat rule is configured.
+  assert.equal(evaluateRules(cfg, '分析一下').action, ACTION_TRIGGER)
+})
+
 test('loop keywords trigger loop with loop modules', () => {
   const cfg = createDefaultConfig()
   const d = evaluateRules(cfg, '做一个仓库级跨文件重构并保持全局一致')
@@ -131,6 +168,28 @@ test('all mode requires every pattern', () => {
   assert.equal(evaluateRules(cfg, '重构这个架构').action, ACTION_TRIGGER)
 })
 
+test('score rules accept a per-rule threshold and expose their match evidence', () => {
+  const cfg = mergeConfig({
+    trigger: {
+      minScore: 1,
+      rules: [{
+        id: 'precise-score',
+        action: ACTION_TRIGGER,
+        pass: PASS_FULL,
+        matchMode: 'score',
+        minScore: 2,
+        patterns: ['架构', '风险', '测试'],
+      }],
+    },
+  })
+  assert.equal(evaluateRules(cfg, '分析架构').action, ACTION_NONE)
+  const d = evaluateRules(cfg, '分析架构风险')
+  assert.equal(d.action, ACTION_TRIGGER)
+  assert.equal(d.threshold, 2)
+  assert.equal(d.hitCount, 2)
+  assert.deepEqual(d.matchedPatterns, ['架构', '风险'])
+})
+
 test('regular-expression rules work even when supplied without the global flag', () => {
   const cfg = mergeConfig({
     trigger: {
@@ -155,6 +214,19 @@ test('extractText handles nested message shape', () => {
   assert.equal(extractText(data), 'hello world')
 })
 
+test('extractText handles the DSH rc.7 UserMessage content-block shape', () => {
+  const data = {
+    id: 'msg-1',
+    role: 'user',
+    source: { kind: 'user' },
+    content: [
+      { type: 'text', text: 'hello' },
+      { type: 'text', text: 'world' },
+    ],
+  }
+  assert.equal(extractText(data), 'hello world')
+})
+
 test('buildGuideText is empty unless trigger', () => {
   const cfg = createDefaultConfig()
   const d = evaluateRules(cfg, '你好')
@@ -175,4 +247,5 @@ test('formatDecision is inspectable', () => {
   const text = formatDecision(d)
   assert.match(text, /action=trigger/)
   assert.match(text, /pass=full/)
+  assert.match(text, /signals=/)
 })

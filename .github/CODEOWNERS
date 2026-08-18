@@ -1,0 +1,12 @@
+# CODEOWNERS — who is automatically requested for review per path.
+# GitHub requires owners to be exact usernames; commit access is enforced by repo settings.
+
+* @EricWang1358
+
+# Core trigger + delivery logic deserves an extra careful review.
+/src/       @EricWang1358
+/tests/     @EricWang1358
+
+# Security process and dependency policy.
+/SECURITY.md         @EricWang1358
+/.github/dependabot.yml @EricWang1358

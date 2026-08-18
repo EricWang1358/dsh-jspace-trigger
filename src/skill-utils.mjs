@@ -24,7 +24,10 @@ export function defaultSkillRoots() {
 
 export function skillConfigRoots(config) {
   const roots = config?.skillRoots || defaultSkillRoots()
-  return Array.isArray(roots) ? roots : [roots]
+  const list = Array.isArray(roots) ? roots : [roots]
+  // An explicit empty roots list means "no configured roots" — fall back to the
+  // built-in defaults rather than reporting the skill as permanently missing.
+  return list.length > 0 ? list : defaultSkillRoots()
 }
 
 export function skillPaths(config) {
@@ -61,9 +64,14 @@ export async function installJSpaceSkill(config = {}, options = {}) {
   await mkdir(targetRoot, { recursive: true })
   const temp = await mkdtemp(join(tmpdir(), 'jspace-install-'))
   try {
+    // `stdio: 'ignore'` (not the default 'pipe') — under DSH's Windows ACL
+    // sandbox, capturing child-process output through a pipe fails with EPERM.
+    // We don't consume git's output, so ignore it and let execFile throw on a
+    // non-zero exit.
     await execFileAsync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, temp], {
       windowsHide: true,
       timeout: 120000,
+      stdio: 'ignore',
     })
 
     const src = join(temp, SKILL_DIR_NAME)

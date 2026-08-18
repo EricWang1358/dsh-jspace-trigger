@@ -1,6 +1,7 @@
 # dsh-jspace-trigger 规则设计草案
 
-> 状态：调研完成，待评审。
+> 状态：已实现并覆盖自动化测试（40/40）。
+> 已对照 DSH `0.1.0-rc.7`（`@deepseek-ai/cordis` 4.x）的类型契约核验主机侧 API。
 > 核心目标：不搞一刀切注入；用**可配置规则**判断是否命中，命中才提示加载 `j-space`，未命中零成本。
 
 ## 1. 调研结论
@@ -39,6 +40,7 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
 3. 触发结果不应只是“是/否”，最好直接给出 `fast / full / loop` 和推荐模块。
 4. 注入点建议用 **near-field**（用户消息后追加），而不是固定 system prompt，符合“不能一刀切注入”。
 5. 规则要可配置：关键词/正则/长度/显式命令，且可关闭。
+6. 只统计“是否命中”不能校准效果；需要把触发、投递和后续 skill 调用连成可审计漏斗，同时不保留提示词或工具参数。
 
 ## 2. 设计目标
 
@@ -48,7 +50,7 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
 - 未命中任何规则：完全零成本。
 - 支持显式触发：`/j-space` 或“使用 j-space”。
 - 支持忽略规则：寒暄、纯确认、无需推理的任务。
-- 支持优先级：`explicit > ignore > workspace-research > loop > research > complex > 长度兜底 > none`。
+- 支持优先级：`显式拒绝 > explicit > ignore > workspace-research > loop > research > complex > 长度兜底 > none`。
 - 规则全部可配置，配置改动即时生效或重启后生效（DSH 插件规范决定）。
 
 ## 3. 规则决策流程
@@ -65,7 +67,13 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
   └─ 7. 不确定 → 可配置 fallback：none / fast / full
 ```
 
-优先级按顺序短路：`explicit > ignore > workspace-research > loop > research > complex`；同一档内可做评分，例如多个关键词命中增加置信度。
+优先级按顺序短路：`显式拒绝 > explicit > ignore > workspace-research > loop > research > complex`；同一档内可做评分，例如多个关键词命中增加置信度。
+
+实现上，`显式拒绝`（`jspace-optout`）是**内置安全规则**：无论用户是否在
+`trigger.rules` 里删掉或重排规则，它都永远最先求值，保证“不要使用
+j-space”之类显式拒绝不可能被内容关键词覆盖。`chat` 规则可被自定义替换，
+但删除后仍保留一个最小内置寒暄兜底。所有正则在一次 `evaluateRules` 调用内
+按规则预编译，避免在 `session/event` 热路径上反复编译。
 
 ## 4. 可配置规则 Schema（草案）
 
@@ -74,6 +82,9 @@ J-Space Cognition Suite V3.6 是一个 Skill，不是 DSH 插件。它内部自�
 ```yaml
 enabled: true
 injectMode: near-field   # near-field | none
+analytics:
+  enabled: true           # 仅规则/投递/工具名元数据，不存文本或参数
+  maxRecords: 50          # 1..500 条内存记录
 trigger:
   minScore: 1            # matchMode: score 时至少命中多少个关键词/正则
   loopChars: 1800        # 超过该长度直接判 loop
@@ -141,10 +152,12 @@ trigger:
 | `enabled` | 总开关 |
 | `injectMode` | `near-field` 推荐；`none` 为仅观测：记录命中但不注入 |
 | `trigger.minScore` | `matchMode: score` 时的命中数阈值，减少单关键词误报 |
+| `trigger.rules[].minScore` | 某条 `score` 规则独立的阈值，优先于全局值 |
 | `trigger.rules[].action` | `trigger` / `ignore` / `none` |
 | `trigger.rules[].pass` | `fast` / `full` / `loop` |
 | `trigger.rules[].modules` | 命中后建议加载的 J-Space 模块 |
 | `trigger.rules[].patterns` | 关键词或正则（JS RegExp source 字符串） |
+| `trigger.rules[].excludePatterns` | 命中时否决该规则，可表达“不要使用 j-space” |
 | `trigger.matchMode` | 可选 `any` / `all` / `score` |
 
 ### 默认建议
@@ -199,6 +212,7 @@ export function apply(ctx, config) {
 
 - `jspace_trigger_status`：查看当前规则配置，以及命中、注入、observe-only 和失败计数。
 - `jspace_trigger_test <text>`：干跑一条消息，输出决策结果，便于调规则。
+- `jspace_trigger_analytics`：查看 `规则命中 → 投递结果 → 后续 tool/call → jspaceSkillLoaded` 的有界内存漏斗。只记录元数据，绝不记录用户原文或工具参数。
 
 ## 6. 与已装插件/生态的共存
 
@@ -212,8 +226,20 @@ export function apply(ctx, config) {
 1. **near-field 注入是否足够**：模型是否真的会因此主动调用 `skill` 加载 `j-space`？需要真机跑 2-3 个复杂任务验证。
 2. **是否要自动加载 skill**：DSH 插件能否直接触发模型加载 skill 不可控；当前方案是“提示模型按需加载”，不是强制。
 3. **规则误报率**：关键词规则需要样本校准；建议先收集 20-30 条真实消息做干跑测试。
+4. **DSH 新版本主机侧 API 漂移**：`session/event` 的 `data` 形状、`tool/call` 参数是否为 JSON 字符串、`ctx.agent`/`ctx.agents` 是否保留，需随 DSH 发版回归核验（已纳入 CI 的 rc.7 形状测试）。
 
-## 8. 参考来源
+## 8. DSH 0.1.0-rc.7 主机侧契约核验（已核实）
+
+| 契约 | 结论 |
+| --- | --- |
+| `ctx.on('session/event', (session, event))` | ✅ `event = { type, seq, time, data }` |
+| `user/message` 的 `data` | ✅ 直接是 `UserMessage { id, role:'user', content: ContentBlock[], source:{kind:'user'} }` |
+| `tool/call` 的 `data` | ✅ `{ turn, step, callId, name: string, arguments: string(JSON) }` |
+| `agent.inbox.append('next-step' \| 'next-turn', UserMessage)` | ✅ 需要完整 `UserMessage` |
+| `ctx.tools.register(ToolDefinition)` 用 `ctx.effect` 包裹 | ✅ HMR 安全，返回 disposer |
+| 当前 agent 解析 | ✅ `ctx.agent`（Context 属性）+ `ctx.agents.get(id)`（注册表），**不是** `ctx.get('agent')`（该名非 reflector service） |
+
+## 9. 参考来源
 
 - J-Space Cognition Suite V3.6：https://github.com/Tiger3807861189/J-Space-Cognition-Suite-V3.6
 - dsh-routing-suite：https://github.com/yjh051108/dsh-routing-suite

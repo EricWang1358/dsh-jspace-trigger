@@ -45,6 +45,12 @@ test('skillPaths maps each configured root to j-space', () => {
   ])
 })
 
+test('an empty skillRoots list falls back to built-in defaults instead of reporting missing', () => {
+  const paths = skillPaths({ skillRoots: [] })
+  assert.ok(paths.length > 0)
+  assert.ok(paths.every((p) => p.endsWith('j-space')))
+})
+
 test('installJSpaceSkill refuses to overwrite an existing skill without force', async () => {
   const root = join(tempRoot, 'already-installed')
   await mkdir(join(root, 'j-space'), { recursive: true })

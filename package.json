@@ -1,10 +1,29 @@
 {
   "name": "dsh-jspace-trigger",
-  "version": "0.1.0",
-  "description": "Configurable rule-based lightweight trigger for J-Space in DeepSeek Harness",
+  "version": "0.2.0",
+  "description": "Configurable near-field trigger that reminds a DeepSeek Harness agent to load the J-Space Cognition Suite only when rules say it is worth it",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "j-space",
+    "cordis",
+    "plugin",
+    "router",
+    "trigger",
+    "skill",
+    "agent"
+  ],
   "license": "MIT",
   "type": "module",
   "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/EricWang1358/dsh-jspace-trigger.git"
@@ -13,14 +32,17 @@
     "url": "https://github.com/EricWang1358/dsh-jspace-trigger/issues"
   },
   "homepage": "https://github.com/EricWang1358/dsh-jspace-trigger#readme",
+  "author": "EricWang1358",
   "files": [
     "index.js",
+    "index.d.ts",
     "src",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
     "LICENSE",
     "CONTRIBUTING.md",
+    "SECURITY.md",
     "docs"
   ],
   "dsh": {
@@ -29,9 +51,20 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=0.1.0"
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
+    "@deepseek-ai/dsh-agent": ">=0.1.0-rc <1",
+    "@deepseek-ai/dsh-session": ">=0.1.0-rc <1",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc <1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent": { "optional": true },
+    "@deepseek-ai/dsh-session": { "optional": true }
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.mjs\""
+    "test": "node --test \"tests/*.test.mjs\"",
+    "test:coverage": "node --test --experimental-test-coverage \"tests/*.test.mjs\"",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/check.mjs && npm test",
+    "prepack": "node scripts/check.mjs"
   }
 }
