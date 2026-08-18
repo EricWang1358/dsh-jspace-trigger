@@ -14,6 +14,7 @@ import {
   evaluateRules,
   extractText,
   formatDecision,
+  hasImageBlock,
   mergeConfig,
 } from '../src/trigger-core.mjs'
 
@@ -279,6 +280,31 @@ test('extractText handles the DSH rc.7 UserMessage content-block shape', () => {
     ],
   }
   assert.equal(extractText(data), 'hello world')
+})
+
+test('extractText ignores image and other non-text blocks (no serialized metadata leak)', () => {
+  const data = {
+    source: { kind: 'user' },
+    content: [
+      {
+        type: 'image',
+        attachment: {
+          attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 99999,
+          width: 1200, height: 800, name: 'long-screenshot-with-many-chars.png',
+        },
+      },
+      { type: 'text', text: '看这张图' },
+    ],
+  }
+  assert.equal(extractText(data), '看这张图')
+  assert.equal(hasImageBlock(data), true)
+
+  const imageOnly = {
+    source: { kind: 'user' },
+    content: [{ type: 'image', attachment: { attachmentId: 'sha256:x', mediaType: 'image/png' } }],
+  }
+  assert.equal(extractText(imageOnly), '')
+  assert.equal(hasImageBlock(imageOnly), true)
 })
 
 test('buildGuideText is empty unless trigger', () => {

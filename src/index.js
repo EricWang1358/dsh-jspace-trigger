@@ -16,6 +16,7 @@ import {
   evaluateRules,
   extractText,
   formatDecision,
+  hasImageBlock,
   mergeConfig,
 } from './trigger-core.mjs'
 import {
@@ -130,6 +131,11 @@ export function apply(ctx, config = {}) {
     if (event?.type !== 'user/message') return
     const data = event.data ?? {}
     if (data.source?.kind !== 'user') return
+
+    // Uploaded images carry no analysis-worthy user text. Short-circuit them so
+    // a vision-router/attachment serialization can never drive a length-fallback
+    // trigger on every image message.
+    if (hasImageBlock(data)) return
 
     const text = extractText(data)
     if (!text) return

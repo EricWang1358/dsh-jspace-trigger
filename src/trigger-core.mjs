@@ -365,13 +365,33 @@ export function extractText(data) {
     .map((block) => {
       if (typeof block === 'string') return block
       if (block && typeof block === 'object') {
-        if (typeof block.text === 'string') return block.text
-        if (typeof block.content === 'string') return block.content
+        // Only VISIBLE user-authored text counts for classification. Image,
+        // reasoning, tool-call, and tool-result blocks must never leak their
+        // metadata into the rule text — otherwise an uploaded image (whose
+        // serialized attachment carries many characters) would hit the length
+        // fallback and trigger J-Space on every image message.
+        if (block.type === 'text' && typeof block.text === 'string') return block.text
+        // Legacy blocks without a `type` discriminator that carry a text field.
+        if (block.type === undefined && typeof block.text === 'string') return block.text
+        if (block.type === undefined && typeof block.content === 'string') return block.content
       }
       return ''
     })
     .join(' ')
     .trim()
+}
+
+/**
+ * Whether a user message carries an image block (uploaded screenshot/photo).
+ * Used by the entry to short-circuit classification: image prompts do not carry
+ * analysis-worthy text, so a J-Space nudge is never worth injecting for them.
+ */
+export function hasImageBlock(data) {
+  if (!data) return false
+  const payload =
+    data && typeof data.message === 'object' && data.message !== null ? data.message : data
+  const content = Array.isArray(payload.content) ? payload.content : []
+  return content.some((block) => block && typeof block === 'object' && block.type === 'image')
 }
 
 export function buildGuideText(decisionValue, text = '', config = {}, options = {}) {

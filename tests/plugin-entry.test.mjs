@@ -97,6 +97,38 @@ test('near-field mode handles the DSH rc.7 user/message event shape', async () =
   assert.match(appended[0][1].content[0].text, /J-space pass: full/)
 })
 
+test('an uploaded-image message never triggers a J-Space nudge', async () => {
+  const appended = []
+  const agent = {
+    session: { id: 'session-a' },
+    inbox: { append: (...args) => appended.push(args) },
+  }
+  const { ctx, handlers, tools } = createContext(agent)
+  apply(ctx)
+
+  await handlers.get('system-prompt/assemble')({}, { agent }, async () => 'assembled')
+  const imageEvent = {
+    id: 'img-1',
+    type: 'user/message',
+    data: {
+      id: 'img-1',
+      role: 'user',
+      source: { kind: 'user' },
+      content: [
+        { type: 'image', attachment: { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 99999, width: 1200, height: 800, name: 'long.png' } },
+        { type: 'text', text: '看这张图' },
+      ],
+    },
+  }
+  handlers.get('session/event')({ id: 'session-a' }, imageEvent)
+  await Promise.resolve()
+
+  assert.equal(appended.length, 0)
+  const status = tools.find((tool) => tool.name === 'jspace_trigger_status').execute()
+  assert.match(status, /userEvents=0/)
+  assert.match(status, /triggered=0/)
+})
+
 test('inbox append is deferred, avoiding session.append re-entrancy on DSH rc.7', async () => {
   const appended = []
   let publishing = false
