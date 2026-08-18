@@ -1,9 +1,7 @@
 # dsh-jspace-trigger
 
-<p align="center">
-  <b>DeepSeek Harness 中 J-Space 的可配置近场触发插件</b><br>
-  不搞一刀切注入。不强制塞 system prompt。只在规则判定值得时，提示模型加载 <code>j-space</code>。
-</p>
+> **DeepSeek Harness 中 J-Space 的可配置近场触发插件。**\
+> 不搞一刀切注入。不强制塞 system prompt。只在规则判定值得时，提示模型加载 `j-space`。
 
 <p align="center">
   <a href="./README.md">English</a> ·

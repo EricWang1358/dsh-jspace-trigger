@@ -1,9 +1,7 @@
 # dsh-jspace-trigger
 
-<p align="center">
-  <b>Configurable, near-field trigger for J-Space in DeepSeek Harness</b><br>
-  No blanket injection. No forced system prompt. Only prompt the model to load <code>j-space</code> when rules say it is worth it.
-</p>
+> **Configurable, near-field trigger for J-Space in DeepSeek Harness.**\
+> No blanket injection. No forced system prompt. Only prompt the model to load `j-space` when rules say it is worth it.
 
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a> ·
